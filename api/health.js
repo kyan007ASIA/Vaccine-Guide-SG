@@ -7,7 +7,7 @@ import { MCP_PATH, checkMcpConnection } from './mcp.js';
 import { getLoadedDataset, CSV_FILENAME, EXPECTED_COLUMNS } from './csvParser.js';
 import { APPROVED_SOURCES_REGISTRY } from './sources.js';
 
-export async function getHealthReport() {
+export async function getHealthReport(req = null) {
   let datasetInfo = null;
   let datasetError = null;
 
@@ -33,8 +33,9 @@ export async function getHealthReport() {
     };
   }
 
-  // Live MCP status check (real measured latency)
-  const mcpCheck = await checkMcpConnection(3000);
+  // Live MCP status check (real measured latency with authorization header)
+  const clientAuth = req?.headers?.authorization;
+  const mcpCheck = await checkMcpConnection(3000, clientAuth);
 
   const serverInfo = {
     status: datasetInfo.valid ? 'healthy' : 'degraded',
@@ -79,7 +80,7 @@ export async function getHealthReport() {
  */
 export default async function handler(req, res) {
   try {
-    const report = await getHealthReport();
+    const report = await getHealthReport(req);
     res.setHeader('Content-Type', 'application/json');
     return res.status(200).json(report);
   } catch (error) {

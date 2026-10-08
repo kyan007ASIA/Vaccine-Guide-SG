@@ -82,17 +82,31 @@ export const VERIFIED_PUBMED_RECORDS = [
  * Check connection to the PubMed MCP server at https://server.smithery.ai/pubmed.
  * Measures real latency and captures actual HTTP status.
  */
-export async function checkMcpConnection(timeoutMs = 5000) {
+export async function checkMcpConnection(timeoutMs = 5000, customAuth = null) {
   const startTime = Date.now();
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  const token =
+    customAuth ||
+    process.env.SMITHERY_API_KEY ||
+    process.env.MCP_AUTH_TOKEN ||
+    process.env.PUBMED_MCP_TOKEN ||
+    process.env.PUBMED_API_KEY ||
+    process.env.MCP_TOKEN ||
+    '';
+
+  const authHeader = token
+    ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`)
+    : 'Bearer ';
 
   try {
     const res = await fetch(MCP_SERVER_URL, {
       method: 'GET',
       headers: {
         'Accept': 'application/json, text/plain, */*',
-        'User-Agent': 'MyVaccineGuideSG/1.0 (Singapore Educational Health App)'
+        'User-Agent': 'MyVaccineGuideSG/1.0 (Singapore Educational Health App)',
+        'Authorization': authHeader
       },
       signal: controller.signal
     });
@@ -195,7 +209,8 @@ export default async function handler(req, res) {
       const pmid = req.query?.pmid || null;
       const testOnly = req.query?.test === 'true';
 
-      const connection = await checkMcpConnection();
+      const clientAuth = req.headers?.authorization;
+      const connection = await checkMcpConnection(5000, clientAuth);
       if (testOnly) {
         return res.status(200).json({
           mcpPath: MCP_PATH,
@@ -216,7 +231,8 @@ export default async function handler(req, res) {
       const { query, pmid, checkConnection } = body;
 
       if (checkConnection) {
-        const conn = await checkMcpConnection();
+        const clientAuth = req.headers?.authorization;
+        const conn = await checkMcpConnection(5000, clientAuth);
         return res.status(200).json(conn);
       }
 
