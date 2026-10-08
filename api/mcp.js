@@ -87,27 +87,36 @@ export async function checkMcpConnection(timeoutMs = 5000, customAuth = null) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  const token =
+  // Normalize token: strip any existing 'Bearer ' prefix and trim
+  let cleanToken = (
     customAuth ||
     process.env.SMITHERY_API_KEY ||
     process.env.MCP_AUTH_TOKEN ||
     process.env.PUBMED_MCP_TOKEN ||
     process.env.PUBMED_API_KEY ||
     process.env.MCP_TOKEN ||
-    '';
+    ''
+  ).trim();
 
-  const authHeader = token
-    ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`)
-    : 'Bearer ';
+  if (cleanToken.toLowerCase().startsWith('bearer ')) {
+    cleanToken = cleanToken.slice(7).trim();
+  }
+
+  const headers = {
+    'Accept': 'application/json, text/plain, */*',
+    'User-Agent': 'MyVaccineGuideSG/1.0 (Singapore Educational Health App)'
+  };
+
+  // Only attach Authorization header if a non-empty token exists, properly formatted as 'Bearer TOKEN'
+  // to avoid 'Invalid Authorization header format, expected Bearer TOKEN'
+  if (cleanToken) {
+    headers['Authorization'] = `Bearer ${cleanToken}`;
+  }
 
   try {
     const res = await fetch(MCP_SERVER_URL, {
       method: 'GET',
-      headers: {
-        'Accept': 'application/json, text/plain, */*',
-        'User-Agent': 'MyVaccineGuideSG/1.0 (Singapore Educational Health App)',
-        'Authorization': authHeader
-      },
+      headers,
       signal: controller.signal
     });
 
@@ -116,16 +125,27 @@ export async function checkMcpConnection(timeoutMs = 5000, customAuth = null) {
 
     let bodySnippet = null;
     let contentType = res.headers.get('content-type') || '';
+    let parsedJson = null;
+
     if (contentType.includes('application/json')) {
       try {
-        const json = await res.json();
-        bodySnippet = typeof json === 'object' ? JSON.stringify(json).slice(0, 200) : String(json).slice(0, 200);
+        parsedJson = await res.json();
+        bodySnippet = typeof parsedJson === 'object' ? JSON.stringify(parsedJson).slice(0, 200) : String(parsedJson).slice(0, 200);
       } catch {
         bodySnippet = 'Invalid JSON response';
       }
     } else {
       const text = await res.text();
       bodySnippet = text.slice(0, 200);
+    }
+
+    let note = res.ok ? 'Connected to PubMed MCP service' : `Service returned HTTP ${res.status}`;
+    if (res.status === 401) {
+      if (!cleanToken) {
+        note = 'Authentication required: Smithery PubMed MCP requires a Bearer token (configure SMITHERY_API_KEY). Local verified PubMed evidence records remain fully operational.';
+      } else {
+        note = `Authentication failed (${parsedJson?.error_description || 'Invalid token'}): Please verify SMITHERY_API_KEY. Local verified PubMed evidence records remain fully operational.`;
+      }
     }
 
     return {
@@ -137,7 +157,11 @@ export async function checkMcpConnection(timeoutMs = 5000, customAuth = null) {
       contentType,
       bodySnippet,
       checkedAt: new Date().toISOString(),
-      note: res.ok ? 'Connected to PubMed MCP service' : `Service returned HTTP ${res.status}`
+      authStatus: cleanToken ? (res.ok ? 'authenticated' : 'invalid_token') : 'unconfigured',
+      authHeaderProvided: Boolean(cleanToken),
+      authError: parsedJson?.error || (res.status === 401 ? 'unauthorized' : null),
+      authErrorDescription: parsedJson?.error_description || (res.status === 401 ? 'Token required or invalid' : null),
+      note
     };
   } catch (err) {
     clearTimeout(timeoutId);
