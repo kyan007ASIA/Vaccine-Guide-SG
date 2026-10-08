@@ -1,0 +1,6 @@
+{
+  "name": "My Vaccine Guide SG",
+  "description": "Singapore patient-awareness and adult-vaccination education app grounded in official NAIS guidance, MOH subsidy policies, and real-time environment data.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
